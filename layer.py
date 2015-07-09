@@ -119,6 +119,59 @@ class GRU(Layer):
             non_sequences=[self.u_z, self.u_r, self.u_h]
         )
         return out.dimshuffle((1,0,2))
+    
+class GRU_akos(Layer):
+    """Gated Recurrent Unit layer. Takes initial hidden state, and a
+       sequence of inputs, and returns the sequence of hidden states.
+       WARNING: It breaks the 'last' function
+    """
+    def __init__(self, size_in, size, activation=tanh, gate_activation=steeper_sigmoid,
+                reverse=False):
+        autoassign(locals())
+
+        self.init = orthogonal
+        self.w_z = self.init((self.size_in, self.size))
+        self.w_r = self.init((self.size_in, self.size))
+
+        self.u_z = self.init((self.size, self.size))
+        self.u_r = self.init((self.size, self.size))
+
+        self.b_z = shared0s((self.size))
+        self.b_r = shared0s((self.size))
+
+        self.w_h = self.init((self.size_in, self.size)) 
+        self.u_h = self.init((self.size, self.size))
+        self.b_h = shared0s((self.size))   
+
+        self.params = [self.w_z, self.w_r, self.w_h, self.u_z, self.u_r, self.u_h, self.b_z, self.b_r, self.b_h]
+
+    def step(self, xz_t, xr_t, xh_t, h_tm1, r_tm1, z_tm1, u_z, u_r, u_h):
+        z = self.gate_activation(xz_t + T.dot(h_tm1, u_z))
+        r = self.gate_activation(xr_t + T.dot(h_tm1, u_r))
+        h_tilda_t = self.activation(xh_t + T.dot(r * h_tm1, u_h))
+        h_t = z * h_tm1 + (1 - z) * h_tilda_t
+        return h_t, r, z
+
+    def __call__(self, h0, seq, repeat_h0=1):
+        X = seq.dimshuffle((1,0,2))
+        if self.reverse == True:
+            X = X[::-1, :, :]
+            
+        H0 = T.repeat(h0, X.shape[1], axis=0) 
+        R0 = T.repeat(h0, X.shape[1], axis=0)
+        Z0 = T.repeat(h0, X.shape[1], axis=0)
+        x_z = T.dot(X, self.w_z) + self.b_z
+        x_r = T.dot(X, self.w_r) + self.b_r
+        x_h = T.dot(X, self.w_h) + self.b_h
+        H, _ = theano.scan(self.step, 
+            sequences=[x_z, x_r, x_h], outputs_info=[H0, R0, Z0], 
+            non_sequences=[self.u_z, self.u_r, self.u_h]
+        )
+        H[0] = H[0].dimshuffle((1,0,2))
+        H[1] = H[1].dimshuffle((1,0,2))
+        H[2] = H[2].dimshuffle((1,0,2))
+        
+        return H
         
 class Zeros(Layer):
     """Returns a shared variable vector of specified size initialized with zeros.""" 
@@ -147,6 +200,10 @@ def GRUH0(size_in, size):
 def last(x):
     """Returns the last time step of all sequences in x."""
     return x.dimshuffle((1,0,2))[-1]
+
+def lastb(x):
+    """THIS WORKS WITH GRU_akos"""
+    return x[0].dimshuffle((1,0,2))[-1]
     
 class EncoderDecoderGRU(Layer):
     """A pair of GRUs: the first one encodes the input sequence into a
