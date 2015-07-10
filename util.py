@@ -112,11 +112,18 @@ def clipped_rectify(x):
 def steeper_sigmoid(x):
 	return 1./(1. + T.exp(-3.75 * x))
 
+def sigmoid(x):
+	return T.nnet.sigmoid(x)
+
 def softmax3d(inp): 
     x = inp.reshape((inp.shape[0]*inp.shape[1],inp.shape[2]))
     e_x = T.exp(x - x.max(axis=1).dimshuffle(0, 'x'))
     result = e_x / e_x.sum(axis=1).dimshuffle(0, 'x')
     return result.reshape(inp.shape)
+
+def softmax(X):
+    e_x = T.exp(X - X.max(axis=1).dimshuffle(0, 'x'))
+    return e_x / e_x.sum(axis=1).dimshuffle(0, 'x')
 
 def CrossEntropy(y_true, y_pred):
     return T.nnet.categorical_crossentropy(T.clip(y_pred, 1e-7, 1.0-1e-7), y_true).mean()
