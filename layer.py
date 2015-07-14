@@ -119,6 +119,102 @@ class GRU(Layer):
             non_sequences=[self.u_z, self.u_r, self.u_h]
         )
         return out.dimshuffle((1,0,2))
+
+    
+class GRU_MUT1(Layer):
+    """Implementation of MUT1 from 
+    http://www.jmlr.org/proceedings/papers/v37/jozefowicz15.pdf
+    """
+    def __init__(self, size_in, size):
+        self.size_in = size_in
+        self.size = size
+        self.activation = tanh
+        self.gate_activation = steeper_sigmoid
+        self.init = orthogonal
+        self.size = size
+
+        self.w_z = self.init((self.size_in, self.size))
+        self.w_r = self.init((self.size_in, self.size))
+
+        self.u_z = self.init((self.size, self.size))
+        self.u_r = self.init((self.size, self.size))
+
+        self.b_z = shared0s((self.size))
+        self.b_r = shared0s((self.size))
+
+        #self.w_h = self.init((self.size_in, self.size)) 
+        self.u_h = self.init((self.size, self.size))
+        self.b_h = shared0s((self.size))   
+
+        self.params = [self.w_z, self.w_r, self.u_z, self.u_r, self.u_h, self.b_z, self.b_r, self.b_h]
+
+    def step(self, xz_t, xr_t, x_t, h_tm1, u_z, u_r, u_h):
+        z = self.gate_activation(xz_t + T.dot(h_tm1, u_z))
+        r = self.gate_activation(xr_t + T.dot(h_tm1, u_r))
+        h_t = self.gate_activation(T.dot(r*h_tm1, u_h) + self.activation(x_t) + self.b_h) * z + (1-z) * h_tm1 
+        return h_t
+
+    def __call__(self, h0, seq, repeat_h0=0):
+        X = seq.dimshuffle((1,0,2))
+        H0 = T.repeat(h0, X.shape[1], axis=0) if repeat_h0 else h0
+        x_z = T.dot(X, self.w_z) + self.b_z
+        x_r = T.dot(X, self.w_r) + self.b_r
+        #x_h = T.dot(X, self.w_h) + self.b_h
+        out, _ = theano.scan(self.step, 
+            sequences=[x_z, x_r, X], 
+                             outputs_info=[H0], 
+            non_sequences=[self.u_z, self.u_r, self.u_h]
+        )
+        return out.dimshuffle((1,0,2))
+
+    
+    
+class GRU_MUT2(Layer):
+    """Implementation of MUT2 from 
+    http://www.jmlr.org/proceedings/papers/v37/jozefowicz15.pdf
+    """
+    def __init__(self, size_in, size):
+        self.size_in = size_in
+        self.size = size
+        self.activation = tanh
+        self.gate_activation = steeper_sigmoid
+        self.init = orthogonal
+        self.size = size
+
+        self.w_z = self.init((self.size_in, self.size))
+        self.w_r = self.init((self.size_in, self.size))
+
+        self.u_z = self.init((self.size, self.size))
+        self.u_r = self.init((self.size, self.size))
+
+        self.b_z = shared0s((self.size))
+        self.b_r = shared0s((self.size))
+
+        self.w_h = self.init((self.size_in, self.size)) 
+        self.u_h = self.init((self.size, self.size))
+        self.b_h = shared0s((self.size))   
+
+        self.params = [self.w_z, self.w_r, self.w_h, self.u_z, self.u_r, self.u_h, self.b_z, self.b_r, self.b_h]
+
+    def step(self, xz_t, xr_t, xh_t, h_tm1, u_z, u_r, u_h):
+        z = self.gate_activation(xz_t + T.dot(h_tm1, u_z))
+        r = self.gate_activation(xr_t + T.dot(h_tm1, u_r))
+        h_t = self.gate_activation(T.dot(r*h_tm1, u_h) + xh_t) * z + (1-z) * h_tm1 
+        return h_t
+
+    def __call__(self, h0, seq, repeat_h0=0):
+        X = seq.dimshuffle((1,0,2))
+        H0 = T.repeat(h0, X.shape[1], axis=0) if repeat_h0 else h0
+        x_z = T.dot(X, self.w_z) + self.b_z
+        x_r = T.dot(X, self.w_r) + self.b_r
+        x_h = T.dot(X, self.w_h) + self.b_h
+        out, _ = theano.scan(self.step, 
+            sequences=[x_z, x_r, x_h], 
+                             outputs_info=[H0], 
+            non_sequences=[self.u_z, self.u_r, self.u_h]
+        )
+        return out.dimshuffle((1,0,2))
+    
     
 class GRU_akos(Layer):
     """Gated Recurrent Unit layer. Takes initial hidden state, and a
@@ -193,9 +289,9 @@ class WithH0(Layer):
     def __call__(self, inp):
         return self.layer(self.h0(), inp, repeat_h0=1)
 
-def GRUH0(size_in, size):
+def GRUH0(size_in, size, layer=GRU,**kwargs):
     """A GRU layer with its own initial state."""
-    return WithH0(Zeros(size), GRU(size_in, size))
+    return WithH0(Zeros(size), layer(size_in, size, **kwargs))
     
 def last(x):
     """Returns the last time step of all sequences in x."""
