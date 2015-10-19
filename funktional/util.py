@@ -191,6 +191,9 @@ def autoassign(locs):
 def params(*layers):
     return sum([ layer.params for layer in layers ], [])
 
+def names(*layers):
+    return sum([ layer.names for layer in layers ], [])
+
 def pad(xss, padding):
     max_len = max((len(xs) for xs in xss))
     def pad_one(xs):
@@ -198,10 +201,12 @@ def pad(xss, padding):
     return [ pad_one(xs) for xs in xss ]
 
 def grouper(iterable, n):
-    "Collect data into fixed-length chunks or blocks"
-    # grouper('ABCDEFG', 3) --> ABC DEF G
-    args = [iter(iterable)] * n
-    return itertools.izip(*args)
+        "Collect data into fixed-length chunks or blocks"
+        # grouper('ABCDEFG', 3, 'x') --> ABC DEF Gxx
+        args = [iter(iterable)] * n
+        chunks = itertools.izip_longest(fillvalue=None, *args)
+        for chunk in chunks:
+            yield [ x for x in chunk if not x is None ]
 
 def shuffled(x):
     y = copy.copy(x)

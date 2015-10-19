@@ -16,6 +16,7 @@ class Layer(object):
     """Neural net layer. Maps (a number of) theano tensors to a theano tensor."""
     def __init__(self):
         self.params = []
+        self.names  = []
 
     def __call__(self, *inp):
          raise NotImplementedError
@@ -23,6 +24,14 @@ class Layer(object):
     def compose(self, l2):
         """Compose itself with another layer."""
         return ComposedLayer(self, l2)
+
+    def param(self, name):
+        """Return parameter by name."""
+        matches = [ p for (n,p) in zip(self.names, self.params) if n == name ]
+        if len(matches) == 0:
+            raise KeyError(name)
+        else:
+            return matches[0]
 
 class Identity(Layer):
     """Return the input unmodified."""
@@ -34,6 +43,7 @@ class ComposedLayer(Layer):
     def __init__(self, first, second):
         autoassign(locals())
         self.params = self.first.params + self.second.params
+        self.names  = self.first.names  + self.second.names
 
     def __call__(self, inp):
         return self.first(self.second(inp))
@@ -44,6 +54,7 @@ class Embedding(Layer):
         autoassign(locals())
         self.E = uniform((self.size_in, self.size_out))
         self.params = [self.E]
+        self.names = ['E']
 
     def __call__(self, inp):
         return self.E[inp]
@@ -62,10 +73,11 @@ class OneHot(Layer):
     def __init__(self, size_in):
         autoassign(locals())
         self.params = []
+        self.names =  []
 
     def __call__(self, inp):
         return theano_one_hot(inp.flatten(), self.size_in).reshape((inp.shape[0], inp.shape[1], self.size_in))
-        
+                
 
 class Dense(Layer):
     """Fully connected layer."""
@@ -74,6 +86,7 @@ class Dense(Layer):
         self.w = orthogonal((self.size_in, self.size_out))
         self.b = shared0s((self.size_out))
         self.params = [self.w, self.b]
+        self.names  = ['w', 'b']
 
     def __call__(self, inp):
         return T.dot(inp, self.w) + self.b
@@ -84,6 +97,7 @@ class Dropout(Layer):
     def __init__(self, prob):
         autoassign(locals())
         self.params = []
+        self.names = []
 
     def __call__(self, inp):
         if self.prob > 0.0:
@@ -118,6 +132,7 @@ class GRU_gate_activations(Layer):
         self.b_h = shared0s((self.size))   
 
         self.params = [self.w_z, self.w_r, self.w_h, self.u_z, self.u_r, self.u_h, self.b_z, self.b_r, self.b_h]
+        self.names =  ['w_z',    'w_r',    'w_h',    'u_z',    'u_r',    'u_h',    'b_z',    'b_r',    'b_h']
 
     def step(self, xz_t, xr_t, xh_t, h_tm1, u_z, u_r, u_h):
         z = self.gate_activation(xz_t + T.dot(h_tm1, u_z))
@@ -148,6 +163,7 @@ class GRU(Layer):
         self.gru = GRU_gate_activations(self.size_in, self.size, activation=self.activation,
                                         gate_activation=self.gate_activation)
         self.params = self.gru.params
+        self.names  = self.gru.names
 
     def __call__(self, h0, seq, repeat_h0=1):
         H, _Z, _R = self.gru(h0, seq, repeat_h0=repeat_h0)
@@ -160,6 +176,7 @@ class Zeros(Layer):
         autoassign(locals())
         self.zeros = theano.shared(numpy.asarray(numpy.zeros((1,self.size)), dtype=theano.config.floatX))
         self.params = [self.zeros]
+        self.names = ['zeros']
     
     def __call__(self):
         return self.zeros
@@ -169,6 +186,7 @@ class WithH0(Layer):
     def __init__(self, h0, layer):
         autoassign(locals())
         self.params = self.h0.params + self.layer.params
+        self.names  = self.h0.names + self.layer.names
 
     def __call__(self, inp):
         return self.layer(self.h0(), inp, repeat_h0=1)
@@ -183,6 +201,7 @@ class WithDropout(Layer):
         autoassign(locals())
         self.Dropout = Dropout(prob=prob)
         self.params = params(self.layer, self.Dropout)
+        self.names = names(self.layer, self.Dropout)
 
     def __call__(self, *args, **kwargs):
         return self.Dropout(self.layer(*args, **kwargs))
@@ -213,6 +232,7 @@ class EncoderDecoderGRU(Layer):
         self.Encode   = encoder(size_in=self.size_in, size=self.size)
         self.Decode   = decoder(size_in=self.size_out, size=self.size)
         self.params = self.Encode.params + self.Decode.params
+        self.names  = self.Encode.names  + self.Decode.names
 
     def __call__(self, inp, out_prev):
         return self.Decode(last(self.Encode(inp)), out_prev)    
@@ -227,6 +247,7 @@ class StackedGRU(Layer):
                    for _ in range(1,self.depth) ]
         self.stack = reduce(lambda z, x: x.compose(z), layers, Identity())
         self.params = params(self.stack, self.bottom)
+        self.names  = names(self.stack, self.bottom)
 
     def __call__(self, h0, inp, repeat_h0=0):
         return self.stack(self.bottom(h0, inp, repeat_h0=repeat_h0))
