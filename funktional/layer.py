@@ -173,9 +173,9 @@ class WithH0(Layer):
     def __call__(self, inp):
         return self.layer(self.h0(), inp, repeat_h0=1)
 
-def GRUH0(size_in, size, **kwargs):
+def GRUH0(size_in, size, layer=GRU,**kwargs):
     """A GRU layer with its own initial state."""
-    return WithH0(Zeros(size), GRU(size_in, size, **kwargs))
+    return WithH0(Zeros(size), layer(size_in, size, **kwargs))
 
 class WithDropout(Layer):
     """Composes given layer with a dropout layer."""
@@ -190,7 +190,10 @@ class WithDropout(Layer):
 
 def last(x):
     """Returns the last time step of all sequences in x."""
-    return x.dimshuffle((1,0,2))[-1]
+    try:
+        return x.dimshuffle((1,0,2))[-1]
+    except:
+        return x[0].dimshuffle((1,0,2))[-1]
     
 class EncoderDecoderGRU(Layer):
     """A pair of GRUs: the first one encodes the input sequence into a
@@ -228,6 +231,6 @@ class StackedGRU(Layer):
     def __call__(self, h0, inp, repeat_h0=0):
         return self.stack(self.bottom(h0, inp, repeat_h0=repeat_h0))
         
-def StackedGRUH0(size_in, size, depth, **kwargs):
+def StackedGRUH0(size_in, size, depth, **kwargs): 
     """A stacked GRU layer with its own initial state."""
     return WithH0(Zeros(size), StackedGRU(size_in, size, depth, **kwargs))
