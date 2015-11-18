@@ -7,6 +7,7 @@ import theano
 import theano.tensor as T
 import numpy as np
 import itertools
+from itertools import izip
 
 class IdTable(object):
     """Map hashable objects to ints and vice versa."""
@@ -188,6 +189,12 @@ def autoassign(locs):
         if key!="self":
             locs["self"].__dict__[key]=locs[key]
 
+def params(*layers):
+    return sum([ layer.params for layer in layers ], [])
+
+def names(*layers):
+    return sum([ layer.names for layer in layers ], [])
+
 def pad(xss, padding):
     max_len = max((len(xs) for xs in xss))
     def pad_one(xs):
@@ -220,13 +227,13 @@ class TextDataWithLabels():
         self.test_documents = test_documents
         self.test_labels = test_labels
         self.labels = labels
-        self.mapper =  util.IdMapper(min_df=self.min_df)
+        self.mapper =  IdMapper(min_df=self.min_df)
         self.inputs = list(self.mapper.fit_transform(documents))
         self.test_inputs = list(self.mapper.transform(test_documents))
         self.batch_size = batch_size
         
     def padder(self, bunch, BEG, END):
-        return numpy.array(pad([[BEG]+sent+[END] for sent in bunch], END)
+        return np.array(pad([[BEG]+sent+[END] for sent in bunch], END)
                            , dtype='int32')
     
     
@@ -240,6 +247,6 @@ class TextDataWithLabels():
         for bunch in grouper(izip(inputs, labels), self.batch_size):
             bunch, labels = zip(*bunch)
             labels = np.vstack(labels)
-            bunch_sort = [ bunch[i] for i in numpy.argsort([len(x) for x in bunch]) ]
+            bunch_sort = [ bunch[i] for i in np.argsort([len(x) for x in bunch]) ]
             padded_sents = self.padder(bunch, self.mapper.BEG_ID, self.mapper.END_ID)
             yield padded_sents, labels
