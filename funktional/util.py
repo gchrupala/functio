@@ -212,3 +212,40 @@ def shuffled(x):
     y = copy.copy(x)
     random.shuffle(y)
     return y
+
+
+class TextDataWithLabels():
+    """ Yields batches of sentences with corresponding labels """
+    
+    def __init__(self, documents, labels, 
+                 test_documents=None, test_labels=None,
+                 batch_size=64, min_df=0):
+        
+        self.min_df = min_df
+        self.documents = documents
+        self.test_documents = test_documents
+        self.test_labels = test_labels
+        self.labels = labels
+        self.mapper =  util.IdMapper(min_df=self.min_df)
+        self.inputs = list(self.mapper.fit_transform(documents))
+        self.test_inputs = list(self.mapper.transform(test_documents))
+        self.batch_size = batch_size
+        
+    def padder(self, bunch, BEG, END):
+        return numpy.array(pad([[BEG]+sent+[END] for sent in bunch], END)
+                           , dtype='int32')
+    
+    
+    def batch(self, split='train'):
+        """ Yield batches of either train or test (document,label) pairs """
+        if split == 'train':
+            inputs, labels = self.inputs, self.labels
+        else:
+            inputs, labels = self.test_inputs, self.test_labels            
+            
+        for bunch in grouper(izip(inputs, labels), self.batch_size):
+            bunch, labels = zip(*bunch)
+            labels = np.vstack(labels)
+            bunch_sort = [ bunch[i] for i in numpy.argsort([len(x) for x in bunch]) ]
+            padded_sents = self.padder(bunch, self.mapper.BEG_ID, self.mapper.END_ID)
+            yield padded_sents, labels
