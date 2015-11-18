@@ -12,26 +12,24 @@ from theano.sandbox.rng_mrg import MRG_RandomStreams
 
 rstream = MRG_RandomStreams(seed=np.random.randint(10e6))
 
+
+def params(*layers):
+    return sum([ layer.params() for layer in layers ], [])
+
 class Layer(object):
     """Neural net layer. Maps (a number of) theano tensors to a theano tensor."""
     def __init__(self):
-        self.params = []
-        self.names  = []
+        pass
 
     def __call__(self, *inp):
          raise NotImplementedError
 
+    def params(self):
+        return []
+    
     def compose(self, l2):
         """Compose itself with another layer."""
         return ComposedLayer(self, l2)
-
-    def param(self, name):
-        """Return parameter by name."""
-        matches = [ p for (n,p) in zip(self.names, self.params) if n == name ]
-        if len(matches) == 0:
-            raise KeyError(name)
-        else:
-            return matches[0]
 
 class Identity(Layer):
     """Return the input unmodified."""
@@ -42,8 +40,9 @@ class ComposedLayer(Layer):
     
     def __init__(self, first, second):
         autoassign(locals())
-        self.params = self.first.params + self.second.params
-        self.names  = self.first.names  + self.second.names
+
+    def params(self):
+        return params(self.first, self.second)
 
     def __call__(self, inp):
         return self.first(self.second(inp))
@@ -53,12 +52,13 @@ class Embedding(Layer):
     def __init__(self, size_in, size_out):
         autoassign(locals())
         self.E = uniform((self.size_in, self.size_out))
-        self.params = [self.E]
-        self.names = ['E']
 
     def __call__(self, inp):
         return self.E[inp]
 
+    def params(self):
+        return [self.E]
+    
     def unembed(self, inp):
         """Invert the embedding."""
         return T.dot(inp, self.E.T)
@@ -72,8 +72,9 @@ class OneHot(Layer):
     """One-hot encoding of input."""
     def __init__(self, size_in):
         autoassign(locals())
-        self.params = []
-        self.names =  []
+
+    def params(self):
+        return []
 
     def __call__(self, inp):
         return theano_one_hot(inp.flatten(), self.size_in).reshape((inp.shape[0], inp.shape[1], self.size_in))
@@ -85,9 +86,10 @@ class Dense(Layer):
         autoassign(locals())
         self.w = orthogonal((self.size_in, self.size_out))
         self.b = shared0s((self.size_out))
-        self.params = [self.w, self.b]
-        self.names  = ['w', 'b']
 
+    def params(self):
+       return [self.w, self.b]
+        
     def __call__(self, inp):
         return T.dot(inp, self.w) + self.b
 
@@ -96,16 +98,17 @@ class Dropout(Layer):
     """Randomly set `prob` fraction of input units to zero during training."""
     def __init__(self, prob):
         autoassign(locals())
-        self.params = []
-        self.names = []
 
+    def params(self):
+        return []
+    
     def __call__(self, inp):
         if self.prob > 0.0:
             keep = 1.0 - self.prob
             if context.training:
-                return inp * rstream.binomial(inp.shape, p=keep, dtype=theano.config.floatX)
+                return inp * rstream.binomial(inp.shape, p=keep, dtype=theano.config.floatX) / keep
             else:
-                return inp * keep
+                return inp
         else:
             return inp
 
@@ -131,9 +134,9 @@ class GRU_gate_activations(Layer):
         self.u_h = self.init((self.size, self.size))
         self.b_h = shared0s((self.size))   
 
-        self.params = [self.w_z, self.w_r, self.w_h, self.u_z, self.u_r, self.u_h, self.b_z, self.b_r, self.b_h]
-        self.names =  ['w_z',    'w_r',    'w_h',    'u_z',    'u_r',    'u_h',    'b_z',    'b_r',    'b_h']
-
+    def params(self):
+        return [self.w_z, self.w_r, self.w_h, self.u_z, self.u_r, self.u_h, self.b_z, self.b_r, self.b_h]
+        
     def step(self, xz_t, xr_t, xh_t, h_tm1, u_z, u_r, u_h):
         z = self.gate_activation(xz_t + T.dot(h_tm1, u_z))
         r = self.gate_activation(xr_t + T.dot(h_tm1, u_r))
@@ -162,9 +165,10 @@ class GRU(Layer):
         autoassign(locals())
         self.gru = GRU_gate_activations(self.size_in, self.size, activation=self.activation,
                                         gate_activation=self.gate_activation)
-        self.params = self.gru.params
-        self.names  = self.gru.names
 
+    def params(self):
+        return self.gru.params()
+    
     def __call__(self, h0, seq, repeat_h0=1):
         H, _Z, _R = self.gru(h0, seq, repeat_h0=repeat_h0)
         return H
@@ -175,8 +179,9 @@ class Zeros(Layer):
     def __init__(self, size):
         autoassign(locals())
         self.zeros = theano.shared(numpy.asarray(numpy.zeros((1,self.size)), dtype=theano.config.floatX))
-        self.params = [self.zeros]
-        self.names = ['zeros']
+    
+    def params(self):
+        return [self.zeros]
     
     def __call__(self):
         return self.zeros
@@ -185,8 +190,9 @@ class WithH0(Layer):
     """Returns a new Layer which composes 'h0' and 'layer' such that 'h0()' is the initial state of 'layer'."""
     def __init__(self, h0, layer):
         autoassign(locals())
-        self.params = self.h0.params + self.layer.params
-        self.names  = self.h0.names + self.layer.names
+
+    def params(self):
+        return params(self.h0, self.layer)
 
     def __call__(self, inp):
         return self.layer(self.h0(), inp, repeat_h0=1)
@@ -200,8 +206,9 @@ class WithDropout(Layer):
     def __init__(self, layer, prob):
         autoassign(locals())
         self.Dropout = Dropout(prob=prob)
-        self.params = params(self.layer, self.Dropout)
-        self.names = names(self.layer, self.Dropout)
+
+    def params(self):
+        return params(self.layer, self.Dropout)
 
     def __call__(self, *args, **kwargs):
         return self.Dropout(self.layer(*args, **kwargs))
@@ -231,27 +238,38 @@ class EncoderDecoderGRU(Layer):
         self.size_out = size_out
         self.Encode   = encoder(size_in=self.size_in, size=self.size)
         self.Decode   = decoder(size_in=self.size_out, size=self.size)
-        self.params = self.Encode.params + self.Decode.params
-        self.names  = self.Encode.names  + self.Decode.names
+
+    def params(self):
+        return params(self.Encode, self.Decode)
 
     def __call__(self, inp, out_prev):
         return self.Decode(last(self.Encode(inp)), out_prev)    
 
                  
 class StackedGRU(Layer):
-    """A stack of GRUs."""
+    """A stack of GRUs.
+       Dropout layers intervene between adjacent GRU layers.
+    """
     def __init__(self, size_in, size, depth=2, dropout_prob=0.0, **kwargs):
         autoassign(locals())
-        self.bottom = WithDropout(GRU(self.size_in, self.size, **kwargs), prob=self.dropout_prob)
-        layers = [ WithDropout(GRUH0(self.size, self.size, **kwargs), prob=self.dropout_prob)
+        layers = [ GRUH0(self.size, self.size, **self.kwargs).compose(Dropout(prob=self.dropout_prob))
                    for _ in range(1,self.depth) ]
+        self.bottom = GRU(self.size, self.size, **self.kwargs)
+        self.Dropout0 = Dropout(prob=self.dropout_prob)
         self.stack = reduce(lambda z, x: x.compose(z), layers, Identity())
-        self.params = params(self.stack, self.bottom)
-        self.names  = names(self.stack, self.bottom)
+
+    def params(self):
+        return params(self.Dropout0, self.bottom, self.stack)
 
     def __call__(self, h0, inp, repeat_h0=0):
-        return self.stack(self.bottom(h0, inp, repeat_h0=repeat_h0))
-        
-def StackedGRUH0(size_in, size, depth, **kwargs): 
+        return self.stack(self.bottom(h0, self.Dropout0(inp), repeat_h0=repeat_h0))
+
+    def grow(self):
+        """Add another layer on top."""
+        self.stack = GRUH0(self.size, self.size, **self.kwargs).compose(Dropout(prob=self.dropout_prob)).compose(self.stack)
+
+def StackedGRUH0(size_in, size, depth, **kwargs):
     """A stacked GRU layer with its own initial state."""
     return WithH0(Zeros(size), StackedGRU(size_in, size, depth, **kwargs))
+
+
