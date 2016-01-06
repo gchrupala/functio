@@ -1,0 +1,10 @@
+Metadata-Version: 1.0
+Name: funktional
+Version: 0.2
+Summary: A minimalistic toolkit for functionally composable neural network layers with Theano.
+Home-page: https://github.com/gchrupala/funktional
+Author: Grzegorz Chrupała
+Author-email: g.chrupala@uvt.nl
+License: MIT
+Description: UNKNOWN
+Platform: UNKNOWN

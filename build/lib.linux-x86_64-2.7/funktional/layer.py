@@ -112,7 +112,6 @@ class Dropout(Layer):
         else:
             return inp
 
-
 class GRU_gate_activations(Layer):
     """Gated Recurrent Unit layer. Takes initial hidden state, and a
        sequence of inputs, and returns the sequence of hidden states,
